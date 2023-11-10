@@ -345,3 +345,9 @@ deps/3rd
 ############# test #############
 test/tmp
 test/var
+
+
+############# perf #############
+perf/perf.data
+perf/perf.folded
+perf/perf.unfold
