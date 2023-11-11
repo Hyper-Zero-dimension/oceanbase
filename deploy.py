@@ -73,6 +73,7 @@ def __create_tenant(cursor, *,
 
 
 if __name__ == "__main__":
+    start_time = datetime.datetime.now()
     log_level = logging.INFO
     log_format = "%(asctime)s.%(msecs)03d [%(levelname)-5s] - %(message)s " \
                 "(%(name)s [%(funcName)s@%(filename)s:%(lineno)s] [%(threadName)s] P:%(process)d T:%(thread)d)"
@@ -124,7 +125,8 @@ if __name__ == "__main__":
     shell_result = subprocess.run(observer_cmd, shell=True)
     _logger.info('deploy done. returncode=%d', shell_result.returncode)
 
-    time.sleep(50)
+    time.sleep(10)
+
     try:
         db = __try_to_connect(args.ip, int(args.mysql_port))
         cursor = db.cursor(cursor=mysql.cursors.DictCursor)
@@ -133,7 +135,7 @@ if __name__ == "__main__":
         bootstrap_begin = datetime.datetime.now()
         cursor.execute(f"ALTER SYSTEM BOOTSTRAP ZONE '{args.zone}' SERVER '{rootservice}'")
         bootstrap_end = datetime.datetime.now()
-        _logger.info('bootstrap success: %s ms' % ((bootstrap_end - bootstrap_begin).total_seconds() * 1000))
+        _logger.info('Bootstrap时间: %s ms' % ((bootstrap_end - bootstrap_begin).total_seconds() * 1000))
         # checkout server status
         cursor.execute("select * from oceanbase.__all_server")
         server_status = cursor.fetchall()
@@ -142,7 +144,7 @@ if __name__ == "__main__":
             exit(1)
         _logger.info('checkout server status ok')
         # ObRootService::check_config_result
-
+        create_tenant_start = datetime.datetime.now()
         __create_tenant(cursor,
                         cpu=args.tenant_cpu,
                         memory_size=args.tenant_memory,
@@ -151,7 +153,10 @@ if __name__ == "__main__":
                         zone_name=args.zone,
                         tenant_name=args.tenant_name)
         _logger.info('create tenant done')
-
+        create_tenant_end = datetime.datetime.now()
+        _logger.info('创建租户时间 = %s ms' %((create_tenant_end - create_tenant_start).total_seconds() * 1000))
+        end_time = datetime.datetime.now()
+        _logger.info('整个流程完成时间 = %s ms' %((end_time - start_time).total_seconds() * 1000))
     except mysql.err.Error as e:
         _logger.info("deploy observer failed. ex=%s", str(e))
         _logger.info(traceback.format_exc())
