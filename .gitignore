@@ -351,3 +351,4 @@ test/var
 perf/perf.data
 perf/perf.folded
 perf/perf.unfold
+perf/FlameGraph
