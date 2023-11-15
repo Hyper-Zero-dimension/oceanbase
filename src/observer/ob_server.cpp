@@ -14,6 +14,7 @@
 
 #include "observer/ob_server.h"
 #include <sys/statvfs.h>
+#include <thread>
 #include "common/log/ob_log_constants.h"
 #include "lib/allocator/ob_libeasy_mem_pool.h"
 #include "lib/alloc/memory_dump.h"
@@ -789,6 +790,10 @@ void ObServer::destroy()
   }
 }
 
+void destroy_startup_task_handler() {
+    SERVER_STARTUP_TASK_HANDLER.destroy();
+}
+
 int ObServer::start_sig_worker_and_handle()
 {
   int ret = OB_SUCCESS;
@@ -827,25 +832,21 @@ int ObServer::start()
     if (OB_FAIL(start_sig_worker_and_handle())) {
       LOG_ERROR("fail to start signal worker", KR(ret));
     }
-
     if (FAILEDx(SERVER_STARTUP_TASK_HANDLER.start())) {
       LOG_ERROR("fail to start server startup task handler", KR(ret));
     } else {
       FLOG_INFO("success to start server startup task handler");
     }
-
     if (FAILEDx(OB_TS_MGR.start())) {
       LOG_ERROR("fail to start ts mgr", KR(ret));
     } else {
       FLOG_INFO("success to start ts mgr");
     }
-
     if (FAILEDx(net_frame_.start())) {
       LOG_ERROR("fail to start net frame", KR(ret));
     } else {
       FLOG_INFO("success to start net frame");
     }
-
     if (FAILEDx(SLOGGERMGR.get_reserved_size(reserved_size))) {
       LOG_ERROR("fail to get reserved size", KR(ret), K(reserved_size));
     } else if (OB_FAIL(OB_SERVER_BLOCK_MGR.start(reserved_size))) {
@@ -853,13 +854,11 @@ int ObServer::start()
     } else {
       FLOG_INFO("success to start block manager");
     }
-
     if (FAILEDx(ObIOManager::get_instance().start())) {
       LOG_ERROR("fail to start io manager", KR(ret));
     } else {
       FLOG_INFO("success to start io manager");
     }
-
     if (FAILEDx(multi_tenant_.start())) {
       LOG_ERROR("fail to start multi tenant", KR(ret));
     } else {
@@ -992,8 +991,11 @@ int ObServer::start()
       has_stopped_ = false;
     }
     // this handler is only used to process tasks during startup. so it can be destroied here.
-    SERVER_STARTUP_TASK_HANDLER.destroy();
-
+    const int64_t begin_destroy_time = ObTimeUtility::current_time();
+    // std::thread destroy_thread(destroy_startup_task_handler);
+    // destroy_thread.detach();
+    destroy_startup_task_handler();
+    LOG_INFO("destroy done. time used", K(ObTimeUtility::current_time() - begin_destroy_time));
     // refresh server configure
     //
     // The version should be greater than original version but less

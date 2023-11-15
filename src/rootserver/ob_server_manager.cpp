@@ -1810,6 +1810,7 @@ int ObServerManager::check_migrate_in_blocked(const common::ObAddr &addr, bool &
 
 int ObServerManager::check_in_service(const common::ObAddr &addr, bool &in_service) const
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   in_service = false;
   if (!inited_) {
@@ -1836,6 +1837,7 @@ int ObServerManager::check_in_service(const common::ObAddr &addr, bool &in_servi
       in_service = status_ptr->in_service();
     }
   }
+  LOG_INFO("check in service time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 

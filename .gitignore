@@ -352,3 +352,7 @@ perf/perf.data
 perf/perf.folded
 perf/perf.unfold
 perf/FlameGraph
+perf/profile.linux-perf.txt
+
+############# trace ############
+trace.sh

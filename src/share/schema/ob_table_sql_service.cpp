@@ -2400,7 +2400,7 @@ int ObTableSqlService::create_table(ObTableSchema &table,
     end_usec = ObTimeUtility::current_time();
     cost_usec = end_usec - start_usec;
     start_usec = end_usec;
-    LOG_INFO("add_table cost: ", K(cost_usec));
+    // LOG_INFO("add_table cost: ", K(cost_usec));
     if (OB_FAIL(add_columns(sql_client, table))) {
       LOG_WARN("insert column schema failed, ", K(ret), "table", to_cstring(table));
     } else if (OB_FAIL(add_constraints(sql_client, table))) {
@@ -2409,7 +2409,7 @@ int ObTableSqlService::create_table(ObTableSchema &table,
     end_usec = ObTimeUtility::current_time();
     cost_usec = end_usec - start_usec;
     start_usec = end_usec;
-    LOG_INFO("add_column cost: ", K(cost_usec));
+    // LOG_INFO("add_column cost: ", K(cost_usec));
     if (OB_SUCC(ret)) {
       if (OB_FAIL(add_table_part_info(sql_client, table))) {
         LOG_WARN("fail to add_table_part_info", K(ret));
@@ -2417,7 +2417,7 @@ int ObTableSqlService::create_table(ObTableSchema &table,
       end_usec = ObTimeUtility::current_time();
       cost_usec = end_usec - start_usec;
       start_usec = end_usec;
-      LOG_INFO("add part info cost: ", K(cost_usec));
+      // LOG_INFO("add part info cost: ", K(cost_usec));
     }
     // insert into all_foreign_key.
     if (OB_SUCC(ret) && !is_inner_table(table.get_table_id())) {
@@ -2456,7 +2456,7 @@ int ObTableSqlService::create_table(ObTableSchema &table,
       end_usec = ObTimeUtility::current_time();
       cost_usec = end_usec - start_usec;
       start_usec = end_usec;
-      LOG_INFO("log_operation cost: ", K(cost_usec));
+      // LOG_INFO("log_operation cost: ", K(cost_usec));
     }
 
     if (OB_SUCC(ret)) {

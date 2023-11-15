@@ -122,6 +122,7 @@ int ObBaseBootstrap::check_inner_stat() const
 int ObBaseBootstrap::check_multiple_zone_deployment_rslist(
     const ObServerInfoList &rs_list)
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   //In the multi zone deployment mode,
   //each server must come from a different zone,
@@ -139,6 +140,7 @@ int ObBaseBootstrap::check_multiple_zone_deployment_rslist(
       }
     }
   }
+  LOG_INFO("check multiple zone deployment list done. time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
@@ -237,13 +239,16 @@ ObPreBootstrap::ObPreBootstrap(ObSrvRpcProxy &rpc_proxy,
 
 int ObPreBootstrap::prepare_bootstrap(ObAddr &master_rs)
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   bool is_empty = false;
   bool match = false;
   begin_ts_ = ObTimeUtility::current_time();
   if (OB_FAIL(check_inner_stat())) {
+    // 保证rootserver数量 >= 1
     LOG_WARN("check_inner_stat failed", KR(ret));
   } else if (OB_FAIL(check_bootstrap_rs_list(rs_list_))) {
+    // 去检查每个rs是要来自于不同的zone的
     LOG_WARN("failed to check_bootstrap_rs_list", KR(ret), K_(rs_list));
   } else if (OB_FAIL(check_all_server_bootstrap_mode_match(match))) {
     LOG_WARN("fail to check all server bootstrap mode match", KR(ret));
@@ -267,6 +272,7 @@ int ObPreBootstrap::prepare_bootstrap(ObAddr &master_rs)
     LOG_WARN("failed to wait elect master partition", KR(ret));
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("prepare bootstrap done. time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
@@ -307,6 +313,7 @@ int ObPreBootstrap::notify_sys_tenant_root_key()
 
 int ObPreBootstrap::notify_sys_tenant_server_unit_resource()
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   ObUnitConfig unit_config;
   common::ObArray<uint64_t> sys_unit_id_array;
@@ -353,11 +360,13 @@ int ObPreBootstrap::notify_sys_tenant_server_unit_resource()
   }
 
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("notify_sys_tenant_server_unit_resource done. time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
 int ObPreBootstrap::notify_sys_tenant_config_()
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   common::ObConfigPairs config;
   common::ObSEArray<common::ObConfigPairs, 1> init_configs;
@@ -380,11 +389,13 @@ int ObPreBootstrap::notify_sys_tenant_config_()
   }
 
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("notify_sys_tenant_config done. time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
 int ObPreBootstrap::create_ls()
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_inner_stat())) {
     LOG_WARN("fail to check inner stat", KR(ret));
@@ -404,12 +415,14 @@ int ObPreBootstrap::create_ls()
     LOG_WARN("create ls failed.", K(ret));
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("create_ls done. time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
 int ObPreBootstrap::wait_elect_ls(
     common::ObAddr &master_rs)
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   const uint64_t tenant_id = OB_SYS_TENANT_ID;
 
@@ -429,12 +442,14 @@ int ObPreBootstrap::wait_elect_ls(
     LOG_INFO("succeed to wait elect log stream");
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("wait_elect_ls done. time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
 int ObPreBootstrap::check_all_server_bootstrap_mode_match(
     bool &match)
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   match = true;
   Bool is_match(false);
@@ -455,12 +470,14 @@ int ObPreBootstrap::check_all_server_bootstrap_mode_match(
     }
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("check_all_server_bootstrap_mode_match done. time used", K(ObTimeUtility::current_time() - begin_time));
 
   return ret;
 }
 
 int ObPreBootstrap::check_is_all_server_empty(bool &is_empty)
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   is_empty = true;
   Bool is_server_empty;
@@ -488,6 +505,7 @@ int ObPreBootstrap::check_is_all_server_empty(bool &is_empty)
     }
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("check_is_all_server_empty done. time used", K(ObTimeUtility::current_time() - begin_time));
 
   return ret;
 }
@@ -548,6 +566,7 @@ ObBootstrap::ObBootstrap(
 
 int ObBootstrap::execute_bootstrap(rootserver::ObServerZoneOpService &server_zone_op_service)
 {
+  const int64_t begin_execute_bootstrap_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   bool already_bootstrap = true;
   ObSArray<ObTableSchema> table_schemas;
@@ -580,6 +599,10 @@ int ObBootstrap::execute_bootstrap(rootserver::ObServerZoneOpService &server_zon
     LOG_WARN("create_all_schema failed",  K(table_schemas), K(ret));
   }
   BOOTSTRAP_CHECK_SUCCESS_V2("create_all_schema");
+
+  LOG_INFO("execute bootstrap: create all schema done. time used", K(ObTimeUtility::current_time() - begin_execute_bootstrap_time));
+  const int64_t mid_time = ObTimeUtility::current_time();
+
   ObMultiVersionSchemaService &schema_service = ddl_service_.get_schema_service();
 
   if (OB_SUCC(ret)) {
@@ -590,16 +613,19 @@ int ObBootstrap::execute_bootstrap(rootserver::ObServerZoneOpService &server_zon
     }
   }
   BOOTSTRAP_CHECK_SUCCESS_V2("refresh_schema");
+  LOG_INFO("execute bootstrap: refresh schema done. time used", K(ObTimeUtility::current_time() - mid_time));
 
   if (FAILEDx(add_servers_in_rs_list(server_zone_op_service))) {
     LOG_WARN("fail to add servers in rs_list_", KR(ret));
-  } else if (OB_FAIL(wait_all_rs_in_service())) {
-    LOG_WARN("failed to wait all rs in service", KR(ret));
-  } else {
+  } // else if (OB_FAIL(wait_all_rs_in_service())) {
+    // LOG_WARN("failed to wait all rs in service", KR(ret));
+  // } 
+  else {
     ROOTSERVICE_EVENT_ADD("bootstrap", "bootstrap_succeed");
   }
 
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("execute bootstrap done. time used", K(ObTimeUtility::current_time() - begin_execute_bootstrap_time));
   return ret;
 }
 
@@ -658,6 +684,7 @@ int ObBootstrap::prepare_create_partition(
     ObTableCreator &creator,
     const share::schema_create_func func)
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   ObArray<ObUnit> units;
   const bool set_primary_zone = false;
@@ -709,11 +736,14 @@ int ObBootstrap::prepare_create_partition(
   }
 
   BOOTSTRAP_CHECK_SUCCESS();
+
+  LOG_INFO("prepare_create_partition done. time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
 int ObBootstrap::create_all_core_table_partition()
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(check_inner_stat())) {
@@ -755,11 +785,13 @@ int ObBootstrap::create_all_core_table_partition()
 
   LOG_INFO("finish creating all core table", K(ret));
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("create_all_core_table_partition done. time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
 int ObBootstrap::create_all_partitions()
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   ObArray<uint64_t> sys_table_ids;
   ObArray<int64_t> partition_nums;
@@ -810,6 +842,7 @@ int ObBootstrap::create_all_partitions()
 
   LOG_INFO("finish creating system tables", K(ret));
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("create_all_partitions done. time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
@@ -836,6 +869,7 @@ int ObBootstrap::add_sys_table_lob_aux_table(
 
 int ObBootstrap::construct_all_schema(ObIArray<ObTableSchema> &table_schemas)
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   const schema_create_func *creator_ptr_arrays[] = {
     core_table_schema_creators,
@@ -890,11 +924,13 @@ int ObBootstrap::construct_all_schema(ObIArray<ObTableSchema> &table_schemas)
     }
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("construct_all_schema done. time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
 int ObBootstrap::broadcast_sys_schema(const ObSArray<ObTableSchema> &table_schemas)
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   obrpc::ObBatchBroadcastSchemaArg arg;
   obrpc::ObBatchBroadcastSchemaResult result;
@@ -938,6 +974,7 @@ int ObBootstrap::broadcast_sys_schema(const ObSArray<ObTableSchema> &table_schem
     } // end for
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("broadcast_sys_schema done. time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
@@ -1060,7 +1097,7 @@ int ObBootstrap::construct_schema(
     const share::schema_create_func func, ObTableSchema &tschema)
 {
   int ret = OB_SUCCESS;
-  BOOTSTRAP_CHECK_SUCCESS_V2("before construct schema");
+  // BOOTSTRAP_CHECK_SUCCESS_V2("before construct schema");
   if (OB_FAIL(check_inner_stat())) {
     LOG_WARN("check_inner_stat failed", K(ret));
   } else if (NULL == func) {
@@ -1110,9 +1147,10 @@ int ObBootstrap::add_servers_in_rs_list(rootserver::ObServerZoneOpService &serve
 
 int ObBootstrap::wait_all_rs_in_service()
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
-  const int64_t check_interval = 500 * 1000;
-  int64_t left_time_can_sleep = WAIT_RS_IN_SERVICE_TIMEOUT_US;
+  const int64_t check_interval = 500 * 1000;  // 设置检查时间
+  int64_t left_time_can_sleep = WAIT_RS_IN_SERVICE_TIMEOUT_US;  // 剩余多少时间用于睡眠,超过则超时
   if (OB_FAIL(check_inner_stat())) {
     LOG_WARN("check_inner_stat failed", K(ret));
   }
@@ -1158,11 +1196,14 @@ int ObBootstrap::wait_all_rs_in_service()
     }
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  const int64_t end_time = ObTimeUtility::current_time();
+  LOG_INFO("wait all rs in service time used", K(end_time - begin_time));
   return ret;
 }
 
 int ObBootstrap::check_is_already_bootstrap(bool &is_bootstrap)
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   int64_t schema_version = OB_INVALID_VERSION;
   is_bootstrap = true;
@@ -1184,11 +1225,13 @@ int ObBootstrap::check_is_already_bootstrap(bool &is_bootstrap)
     //guard->print_info(is_verbose);
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("check is already bootstrap time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
 int ObBootstrap::init_global_stat()
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   ObMySQLProxy &sql_proxy = ddl_service_.get_sql_proxy();
   ObMySQLTransaction trans;
@@ -1233,6 +1276,7 @@ int ObBootstrap::init_global_stat()
     }
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("init global stat time used ", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
@@ -1298,6 +1342,7 @@ int ObBootstrap::gen_sys_tenant_locality_str(
 
 int ObBootstrap::create_sys_tenant()
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   // insert zero system stat value for create system tenant.
   int ret= OB_SUCCESS;
   ObTenantSchema tenant;
@@ -1358,6 +1403,7 @@ int ObBootstrap::create_sys_tenant()
 
   LOG_INFO("create tenant", K(ret), K(tenant));
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("create sys tenant done, time used ", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
@@ -1419,6 +1465,7 @@ int ObBootstrap::insert_sys_ls_(const share::schema::ObTenantSchema &tenant_sche
 
 int ObBootstrap::init_system_data()
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_inner_stat())) {
     LOG_WARN("check_inner_stat failed", KR(ret));
@@ -1434,11 +1481,13 @@ int ObBootstrap::init_system_data()
     LOG_WARN("failed to init all zone table", KR(ret));
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("init system data success. time used ", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
 int ObBootstrap::init_sys_unit_config(share::ObUnitConfig &unit_config)
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   const bool is_hidden_sys = false;
 
@@ -1450,11 +1499,13 @@ int ObBootstrap::init_sys_unit_config(share::ObUnitConfig &unit_config)
     LOG_INFO("init sys tenant unit config succ", K(unit_config));
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("init sys unit config done. time used ", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
 int ObBootstrap::create_sys_unit_config()
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   ObUnitConfig unit_config;
   const bool if_not_exist = true;
@@ -1466,6 +1517,7 @@ int ObBootstrap::create_sys_unit_config()
     LOG_WARN("create_unit_config failed", K(unit_config), K(if_not_exist), K(ret));
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("create sys unit config done. time used ", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
@@ -1486,6 +1538,7 @@ int ObBootstrap::gen_sys_resource_pool(
 
 int ObBootstrap::create_sys_resource_pool()
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   ObArray<ObUnit> sys_units;
   ObArray<ObResourcePoolName> pool_names;
@@ -1530,6 +1583,7 @@ int ObBootstrap::create_sys_resource_pool()
     }
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("create sys resource pool done. time used ", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
@@ -1578,6 +1632,7 @@ int ObBootstrap::init_multiple_zone_deployment_table(
 
 int ObBootstrap::init_all_zone_table()
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   common::ObMySQLTransaction trans;
   ObMySQLProxy &sql_proxy = ddl_service_.get_sql_proxy();
@@ -1605,12 +1660,14 @@ int ObBootstrap::init_all_zone_table()
 
   LOG_INFO("init all zone table", KR(ret));
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("init all zone table done. time used ", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 
 template<typename SCHEMA>
 int ObBootstrap::set_replica_options(SCHEMA &schema)
 {
+  const int64_t begin_time = ObTimeUtility::current_time();
   int ret = OB_SUCCESS;
   BOOTSTRAP_CHECK_SUCCESS_V2("before set replica options");
   ObArray<ObZone> zone_list;
@@ -1642,6 +1699,7 @@ int ObBootstrap::set_replica_options(SCHEMA &schema)
     }
   }
   BOOTSTRAP_CHECK_SUCCESS();
+  LOG_INFO("set replica list done. time used", K(ObTimeUtility::current_time() - begin_time));
   return ret;
 }
 

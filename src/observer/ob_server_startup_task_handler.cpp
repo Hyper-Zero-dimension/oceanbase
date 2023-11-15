@@ -78,11 +78,11 @@ void ObServerStartupTaskHandler::wait()
 void ObServerStartupTaskHandler::destroy()
 {
   if (IS_INIT) {
-    TG_STOP(tg_id_);
-    TG_WAIT(tg_id_);
-    TG_DESTROY(tg_id_);
+    // TG_STOP(tg_id_);
+    // TG_WAIT(tg_id_);
+    // TG_DESTROY(tg_id_);
     tg_id_ = -1;
-    task_allocator_.reset();
+    // task_allocator_.reset();
     is_inited_ = false;
   }
 }
