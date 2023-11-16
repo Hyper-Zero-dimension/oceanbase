@@ -56,6 +56,7 @@
 #include "share/scn.h"
 #include "rootserver/ob_heartbeat_service.h"
 #include "rootserver/ob_root_service.h"
+#include <thread>
 #ifdef OB_BUILD_TDE_SECURITY
 #include "close_modules/tde_security/share/ob_master_key_getter.h"
 #endif
@@ -1362,15 +1363,36 @@ int ObBootstrap::create_sys_tenant()
     ObLocalityDistribution locality_dist;
     common::ObArray<share::ObZoneReplicaAttrSet> zone_replica_num_array;
     char *locality_str = nullptr;
-    if (OB_FAIL(gen_sys_tenant_locality_str(tenant))) {
-      LOG_WARN("fail to gen sys tenant locality str", K(ret));
-    } else if (OB_FAIL(gen_sys_zone_list(zone_list))) {
-      LOG_WARN("fail to gen sys zone list", K(ret));
-    } else if (OB_FAIL(build_zone_region_list(zone_region_list))) {
-      LOG_WARN("fail to build zone region list", K(ret));
-    } else if (OB_FAIL(locality_dist.init())) {
-      LOG_WARN("fail to init locality distribution", K(ret));
-    } else if (OB_FAIL(locality_dist.parse_locality(
+
+    // TODO 加线程池
+
+    std::thread gen_sys_tenant_locality_str_thread([this, &tenant, &ret](){
+      if(OB_FAIL(gen_sys_tenant_locality_str(tenant))) {
+        LOG_WARN("fail to gen sys tenant locality str", K(ret));
+      }
+    });
+    std::thread gen_sys_zone_list_thread([this, &zone_list, &ret]() {
+      if (OB_FAIL(gen_sys_zone_list(zone_list))) {
+        LOG_WARN("fail to gen sys zone list", K(ret));
+      } 
+    });
+    std::thread build_zone_region_list_thread([this, &zone_region_list, &ret]() {
+      if (OB_FAIL(build_zone_region_list(zone_region_list))) {
+        LOG_WARN("fail to build zone region list", K(ret));
+      }
+    });
+    std::thread locality_dist_init_thread([&locality_dist, &ret](){
+      if (OB_FAIL(locality_dist.init())) {
+        LOG_WARN("fail to init locality distribution", K(ret));
+      }
+    });
+
+    gen_sys_tenant_locality_str_thread.join();
+    gen_sys_zone_list_thread.join();
+    build_zone_region_list_thread.join();
+    locality_dist_init_thread.join();
+
+    if (OB_FAIL(locality_dist.parse_locality(
             tenant.get_locality_str(), zone_list, &zone_region_list))) {
       LOG_WARN("fail to parse tenant schema locality", K(ret));
     } else if (OB_ISNULL(locality_str = (char *)allocator.alloc(MAX_LOCALITY_LENGTH + 1))) {
