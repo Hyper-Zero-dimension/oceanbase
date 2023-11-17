@@ -1857,10 +1857,6 @@ int ObRootService::after_restart()
 {
   ObCurTraceId::init(GCONF.self_addr_);
 
-  // avoid concurrent with bootstrap
-  FLOG_INFO("[ROOTSERVICE_NOTICE] try to get lock for bootstrap in after_restart");
-  ObLatchRGuard guard(bootstrap_lock_, ObLatchIds::RS_BOOTSTRAP_LOCK);
-
   // NOTE: Following log print after lock
   FLOG_INFO("[ROOTSERVICE_NOTICE] start to do restart task");
 
@@ -1962,8 +1958,6 @@ int ObRootService::execute_bootstrap(const obrpc::ObBootstrapArg &arg)
   } else {
     update_cpu_quota_concurrency_in_memory_();
     // avoid bootstrap and do_restart run concurrently
-    FLOG_INFO("[ROOTSERVICE_NOTICE] try to get lock for bootstrap in execute_bootstrap");
-    ObLatchWGuard guard(bootstrap_lock_, ObLatchIds::RS_BOOTSTRAP_LOCK);
     FLOG_INFO("[ROOTSERVICE_NOTICE] success to get lock for bootstrap in execute_bootstrap");
     ObBootstrap bootstrap(rpc_proxy_, *lst_operator_, ddl_service_, unit_manager_,
                           *config_, arg, common_proxy_);
