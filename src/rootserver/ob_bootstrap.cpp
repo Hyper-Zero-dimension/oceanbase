@@ -1009,6 +1009,7 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
     for (int64_t i = 0; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
       if (table_schemas.count() == (i + 1) || (i + 1 - begin) >= batch_count) {
         std::thread th([&ddl_service, i, begin, &table_schemas, &ret] () {
+          thread_local 
           int64_t retry_times = 1;
           while (OB_SUCC(ret)) {
             if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, i + 1))) {

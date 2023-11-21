@@ -438,6 +438,7 @@ int ObSchemaServiceSQLImpl::get_new_schema_version(uint64_t tenant_id, int64_t &
 
 bool ObSchemaServiceSQLImpl::in_parallel_ddl_thread_()
 {
+  if(ob_get_origin_thread_name() == nullptr) { return 0; }
   return 0 == STRCASECMP(PARALLEL_DDL_THREAD_NAME, ob_get_origin_thread_name());
 }
 
@@ -452,7 +453,15 @@ int ObSchemaServiceSQLImpl::gen_new_schema_version(
   if (OB_UNLIKELY(OB_INVALID_TENANT_ID == tenant_id)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid tenant_id", KR(ret), K(tenant_id));
-  }else {
+  } else if (in_parallel_ddl_thread_()) {
+    auto *tsi_generator = GET_TSI(TSISchemaVersionGenerator);
+    if (OB_ISNULL(tsi_generator)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("tsi schema version generator is null", KR(ret));
+    } else if (OB_FAIL(tsi_generator->next_version(schema_version))) {
+      LOG_WARN("fail to gen next schema version", KR(ret), KPC(tsi_generator), K(lbt()));
+    }
+  } else {
     if (OB_FAIL(gen_tenant_new_schema_version_(tenant_id, refreshed_schema_version, version_cnt, schema_version))) {
       LOG_WARN("fail to gen schema version", KR(ret), K(tenant_id), K(refreshed_schema_version));
     }
