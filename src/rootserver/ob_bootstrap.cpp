@@ -57,6 +57,7 @@
 #include "rootserver/ob_heartbeat_service.h"
 #include "rootserver/ob_root_service.h"
 #include <thread>
+#include <vector>
 #ifdef OB_BUILD_TDE_SECURITY
 #include "close_modules/tde_security/share/ob_master_key_getter.h"
 #endif
@@ -1003,30 +1004,37 @@ int ObBootstrap::create_all_schema(ObDDLService &ddl_service,
 
     int64_t begin = 0;
     int64_t batch_count = BATCH_INSERT_SCHEMA_CNT;
-    const int64_t MAX_RETRY_TIMES = 3;
+    const int64_t MAX_RETRY_TIMES = 10;
+    std::vector<std::thread> ths;
     for (int64_t i = 0; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
       if (table_schemas.count() == (i + 1) || (i + 1 - begin) >= batch_count) {
-        int64_t retry_times = 1;
-        while (OB_SUCC(ret)) {
-          if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, i + 1))) {
-            LOG_WARN("batch create schema failed", K(ret), "table count", i + 1 - begin);
-            // bugfix:
-            if ((OB_SCHEMA_EAGAIN == ret
-                 || OB_ERR_WAIT_REMOTE_SCHEMA_REFRESH == ret)
-                && retry_times <= MAX_RETRY_TIMES) {
-              retry_times++;
-              ret = OB_SUCCESS;
-              LOG_INFO("schema error while create table, need retry", KR(ret), K(retry_times));
-              ob_usleep(1 * 1000 * 1000L); // 1s
+        std::thread th([&ddl_service, i, begin, &table_schemas, &ret] () {
+          int64_t retry_times = 1;
+          while (OB_SUCC(ret)) {
+            if (OB_FAIL(batch_create_schema(ddl_service, table_schemas, begin, i + 1))) {
+              LOG_WARN("batch create schema failed", K(ret), "table count", i + 1 - begin);
+              // bugfix:
+              if ((OB_SCHEMA_EAGAIN == ret
+                   || OB_ERR_WAIT_REMOTE_SCHEMA_REFRESH == ret)
+                  && retry_times <= MAX_RETRY_TIMES) {
+                retry_times++;
+                ret = OB_SUCCESS;
+                LOG_INFO("schema error while create table, need retry", KR(ret), K(retry_times));
+                ob_usleep(1 * 1000 * 1000L); // 1s
+              }
+            } else {
+              break;
             }
-          } else {
-            break;
           }
-        }
+        });
+        ths.push_back(std::move(th));
         if (OB_SUCC(ret)) {
           begin = i + 1;
         }
       }
+    }
+    for(auto &th : ths) {
+      th.join();
     }
   }
   LOG_INFO("end create all schemas", K(ret), "table count", table_schemas.count(),
