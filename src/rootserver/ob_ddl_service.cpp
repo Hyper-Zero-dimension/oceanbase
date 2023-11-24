@@ -14,6 +14,8 @@
 #include "rootserver/ob_ddl_service.h"
 
 #include "lib/oblog/ob_log.h"
+#include <thread>
+#include <vector>
 #include "lib/time/ob_time_utility.h"
 #include "lib/string/ob_strings.h"
 #include "lib/string/ob_sql_string.h"
@@ -23202,6 +23204,140 @@ int ObDDLService::set_log_restore_source(
   return ret;
 }
 
+// int ObDDLService::create_sys_table_schemas(
+//     ObDDLOperator &ddl_operator,
+//     ObMySQLTransaction &trans,
+//     common::ObIArray<ObTableSchema> &tables)
+// {
+//   int ret = OB_SUCCESS;
+//   if (OB_FAIL(check_inner_stat())) {
+//     LOG_WARN("variable is not init", KR(ret));
+//   } else if (OB_ISNULL(sql_proxy_)
+//              || OB_ISNULL(schema_service_)) {
+//     ret = OB_ERR_UNEXPECTED;
+//     LOG_WARN("ptr is null", KR(ret), KP_(sql_proxy), KP_(schema_service));
+//   } else {
+//     // persist __all_core_table's schema in inner table, which is only used for sys views.
+//     for (int64_t i = 0; OB_SUCC(ret) && i < tables.count(); i++) {
+//       ObTableSchema &table = tables.at(i);
+//       const int64_t table_id = table.get_table_id();
+//       const ObString &table_name = table.get_table_name();
+//       const ObString *ddl_stmt = NULL;
+//       bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table_id) ||
+//                                         is_sys_lob_table(table_id));
+//       if (OB_FAIL(ddl_operator.create_table(table, trans, ddl_stmt,
+//                                             need_sync_schema_version,
+//                                             false /*is_truncate_table*/))) {
+//         LOG_WARN("add table schema failed", KR(ret), K(table_id), K(table_name));
+//       } else {
+//         LOG_INFO("add table schema succeed", K(i), K(table_id), K(table_name));
+//       }
+//     }
+//   }
+//   return ret;
+// }
+
+int batch_create_sys_schema_local(uint64_t tenant_id,
+                              ObDDLService &ddl_service,
+                              ObIArray<ObTableSchema> &table_schemas,
+                              const int64_t begin, const int64_t end)
+{
+  int ret = OB_SUCCESS;
+  const int64_t begin_time = ObTimeUtility::current_time();
+  if (begin < 0 || begin >= end || end > table_schemas.count()) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid argument", K(ret), K(begin), K(end), "table count", table_schemas.count());
+  } else {
+    ObDDLOperator ddl_operator(ddl_service.get_schema_service(), ddl_service.get_sql_proxy());
+    ObMySQLTransaction trans(true);
+    if (OB_FAIL(trans.start(&ddl_service.get_sql_proxy(), tenant_id))) {
+      LOG_WARN("start transaction failed", KR(ret));
+    } else {
+      for (int64_t idx = begin;idx < end && OB_SUCC(ret); idx++) {
+        ObTableSchema &table = table_schemas.at(idx);
+        const ObString *ddl_stmt = NULL;
+        bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table.get_table_id()) ||
+                                          is_sys_lob_table(table.get_table_id()));
+        int64_t start_time = ObTimeUtility::current_time();
+        if (OB_FAIL(ddl_operator.create_table(table, trans, ddl_stmt,
+                                              need_sync_schema_version,
+                                              false))) {
+          LOG_WARN("add table schema failed", K(ret),
+              "table_id", table.get_table_id(),
+              "table_name", table.get_table_name());
+        } else {
+          int64_t end_time = ObTimeUtility::current_time();
+          LOG_INFO("add table schema succeed", K(idx),
+              "table_id", table.get_table_id(),
+              "table_name", table.get_table_name(), "core_table", is_core_table(table.get_table_id()), "cost", end_time-start_time);
+        }
+      }
+    }
+    if (trans.is_started()) {
+      const bool is_commit = (OB_SUCCESS == ret);
+      int tmp_ret = trans.end(is_commit);
+      if (OB_SUCCESS != tmp_ret) {
+        LOG_WARN("end trans failed", K(tmp_ret), K(is_commit));
+        ret = (OB_SUCCESS == ret) ? tmp_ret : ret;
+      } else {
+      }
+    }
+  }
+
+  const int64_t now = ObTimeUtility::current_time();
+  LOG_INFO("batch create schema finish", K(ret), "table_count", end - begin, "total_time_used", now - begin_time);
+  //BOOTSTRAP_CHECK_SUCCESS();
+  return ret;
+}
+
+int parallel_create_sys_table_schema(uint64_t tenant_id, ObDDLService &ddl_service, ObIArray<ObTableSchema> &table_schemas)
+{
+  int ret = OB_SUCCESS;
+  int64_t begin = 0;
+  int64_t batch_count = 128;
+  const int64_t MAX_RETRY_TIMES = 10;
+  int64_t finish_cnt = 0;
+  std::vector<std::thread> ths;
+  ObCurTraceId::TraceId *cur_trace_id = ObCurTraceId::get_trace_id();
+  for (int64_t i = 0; OB_SUCC(ret) && i < table_schemas.count(); ++i) {
+    if (table_schemas.count() == (i + 1) || (i + 1 - begin) >= batch_count) {
+      std::thread th([&, begin, i, cur_trace_id] () {
+        int ret = OB_SUCCESS;
+        ObCurTraceId::set(*cur_trace_id);
+        int64_t retry_times = 1;
+        while (OB_SUCC(ret)) {
+          if (OB_FAIL(batch_create_sys_schema_local(tenant_id, ddl_service, table_schemas, begin, i + 1))) {
+            LOG_WARN("batch create schema failed", K(ret), "table count", i + 1 - begin);
+            // bugfix:
+            if (retry_times <= MAX_RETRY_TIMES) {
+              retry_times++;
+              ret = OB_SUCCESS;
+              LOG_INFO("schema error while create table, need retry", KR(ret), K(retry_times));
+              usleep(1 * 1000 * 1000L); // 1s
+            }
+          } else {
+            ATOMIC_AAF(&finish_cnt, i + 1 - begin);
+            break;
+          }
+        }
+        LOG_INFO("worker job", K(begin), K(i), K(i-begin), K(ret));
+      });
+      ths.push_back(std::move(th));
+      if (OB_SUCC(ret)) {
+        begin = i + 1;
+      }
+    }
+  }
+  for (auto &th : ths) {
+    th.join();
+  }
+  if (finish_cnt != table_schemas.count()) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("parallel_create_table_schema fail", K(finish_cnt), K(table_schemas.count()), K(ret), K(tenant_id));
+  }
+  return ret;
+}
+
 int ObDDLService::create_sys_table_schemas(
     ObDDLOperator &ddl_operator,
     ObMySQLTransaction &trans,
@@ -23210,27 +23346,11 @@ int ObDDLService::create_sys_table_schemas(
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_inner_stat())) {
     LOG_WARN("variable is not init", KR(ret));
-  } else if (OB_ISNULL(sql_proxy_)
-             || OB_ISNULL(schema_service_)) {
+  } else if (OB_ISNULL(sql_proxy_) || OB_ISNULL(schema_service_) || tables.count() == 0) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("ptr is null", KR(ret), KP_(sql_proxy), KP_(schema_service));
-  } else {
-    // persist __all_core_table's schema in inner table, which is only used for sys views.
-    for (int64_t i = 0; OB_SUCC(ret) && i < tables.count(); i++) {
-      ObTableSchema &table = tables.at(i);
-      const int64_t table_id = table.get_table_id();
-      const ObString &table_name = table.get_table_name();
-      const ObString *ddl_stmt = NULL;
-      bool need_sync_schema_version = !(ObSysTableChecker::is_sys_table_index_tid(table_id) ||
-                                        is_sys_lob_table(table_id));
-      if (OB_FAIL(ddl_operator.create_table(table, trans, ddl_stmt,
-                                            need_sync_schema_version,
-                                            false /*is_truncate_table*/))) {
-        LOG_WARN("add table schema failed", KR(ret), K(table_id), K(table_name));
-      } else {
-        LOG_INFO("add table schema succeed", K(i), K(table_id), K(table_name));
-      }
-    }
+  } else if (OB_FAIL(parallel_create_sys_table_schema(tables.at(0).get_tenant_id(), *this, tables))) {
+    LOG_WARN("create_sys_table_schemas", K(ret));
   }
   return ret;
 }
